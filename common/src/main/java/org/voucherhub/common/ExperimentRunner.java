@@ -1,6 +1,7 @@
 package org.voucherhub.common;
 
 import org.voucherhub.common.metrics.Metrics;
+import org.voucherhub.common.crypto.SigmaProtocol.OpeningProof;
 import org.voucherhub.common.protocol.Model.BatchResult;
 import org.voucherhub.common.protocol.Model.Channel;
 import org.voucherhub.common.protocol.Model.Invoice;
@@ -68,12 +69,15 @@ public final class ExperimentRunner {
                     "fair_mint_verify_adapt_finalize", 1, runId, 448, 0, () -> p.completeMint(alice, request, pre));
             WalletVoucher voucher = metrics.time("VoucherHub", delayedRedeem ? "delayed" : "single", "payee",
                     "DRSign.Transform_Verify_receive", 1, runId, 704, 0, () -> p.bobAccept(invoice, credential));
+            OpeningProof proof = metrics.time("VoucherHub", delayedRedeem ? "delayed" : "single", "payee",
+                    "sigma_redeem_opening_proof_generate", 1, runId, 384, 0,
+                    () -> p.makeRedeemProof(voucher, bob.cid));
             if (!delayedRedeem) {
-                metrics.time("VoucherHub", "single", "hub", "redeem_verify_update", 1, runId, 768, 0,
-                        () -> p.redeem(bob, voucher, bob.cid, null));
+                metrics.time("VoucherHub", "single", "hub", "redeem_sigma_verify_update", 1, runId, 1152, 0,
+                        () -> p.redeemWithProof(bob, voucher, bob.cid, null, proof));
             } else {
-                metrics.time("VoucherHub", "delayed", "hub", "redeem_only_delayed", 1, runId, 768, 0,
-                        () -> p.redeem(bob, voucher, bob.cid, null));
+                metrics.time("VoucherHub", "delayed", "hub", "redeem_sigma_verify_delayed", 1, runId, 1152, 0,
+                        () -> p.redeemWithProof(bob, voucher, bob.cid, null, proof));
             }
         }
         metrics.writeCsv(csv);
@@ -97,8 +101,11 @@ public final class ExperimentRunner {
                     vouchers.add(p.bobAccept(invoice, credential));
                 }
                 int runId = run;
-                metrics.time("VoucherHub", "batch", "hub", "batch_redeem_verify_aggregate_update",
-                        size, runId, 768L * size, 0, () -> p.batchRedeem(bob, vouchers));
+                OpeningProof proof = metrics.time("VoucherHub", "batch", "payee",
+                        "sigma_batch_opening_proof_generate", size, runId, 384, 0,
+                        () -> p.makeBatchRedeemProof(vouchers));
+                metrics.time("VoucherHub", "batch", "hub", "batch_redeem_sigma_verify_aggregate_update",
+                        size, runId, 768L * size + 384, 0, () -> p.batchRedeemWithProof(bob, vouchers, proof));
             }
         }
         metrics.writeCsv(csv);
@@ -152,16 +159,23 @@ public final class ExperimentRunner {
             ReleasedCredential credential = p.completeMint(alice, request, pre);
             WalletVoucher voucher = p.bobAccept(invoice, credential);
             if ("invalid_credential".equals(scenario)) {
-                return !p.redeem(bob, voucher, bob.cid, invoice.rId.add(org.voucherhub.common.crypto.Scalar.of(1))).success;
+                OpeningProof proof = p.makeRedeemProof(voucher, bob.cid);
+                return !p.redeemWithProof(bob, voucher, bob.cid,
+                        invoice.rId.add(org.voucherhub.common.crypto.Scalar.of(1)), proof).success;
             }
             if ("duplicate_redeem".equals(scenario)) {
-                return p.redeem(bob, voucher, bob.cid, null).success && !p.redeem(bob, voucher, bob.cid, null).success;
+                OpeningProof proof = p.makeRedeemProof(voucher, bob.cid);
+                return p.redeemWithProof(bob, voucher, bob.cid, null, proof).success
+                        && !p.redeemWithProof(bob, voucher, bob.cid, null, proof).success;
             }
             if ("wrong_cid_B".equals(scenario)) {
-                return !p.redeem(bob, voucher, "other-channel", null).success;
+                OpeningProof proof = p.makeRedeemProof(voucher, bob.cid);
+                return !p.redeemWithProof(bob, voucher, "other-channel", null, proof).success;
             }
             if ("wrong_r_id".equals(scenario)) {
-                return !p.redeem(bob, voucher, bob.cid, invoice.rId.add(org.voucherhub.common.crypto.Scalar.of(2))).success;
+                OpeningProof proof = p.makeRedeemProof(voucher, bob.cid);
+                return !p.redeemWithProof(bob, voucher, bob.cid,
+                        invoice.rId.add(org.voucherhub.common.crypto.Scalar.of(2)), proof).success;
             }
             if ("delayed_batch".equals(scenario)) {
                 List<WalletVoucher> vouchers = new ArrayList<>();
@@ -171,7 +185,7 @@ public final class ExperimentRunner {
                     MintRequest r = p.makeMintRequest(alice, next, false);
                     vouchers.add(p.bobAccept(next, p.completeMint(alice, r, p.hubPrepare(alice, r))));
                 }
-                BatchResult result = p.batchRedeem(bob, vouchers);
+                BatchResult result = p.batchRedeemWithProof(bob, vouchers, p.makeBatchRedeemProof(vouchers));
                 return result.success && result.accepted == 4;
             }
             return false;

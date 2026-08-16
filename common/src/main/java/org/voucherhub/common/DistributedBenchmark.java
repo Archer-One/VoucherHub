@@ -1,5 +1,7 @@
 package org.voucherhub.common;
 
+import org.voucherhub.common.crypto.SigmaProtocol.OpeningProof;
+import org.voucherhub.common.protocol.Model.BatchResult;
 import org.voucherhub.common.protocol.Model.Channel;
 import org.voucherhub.common.protocol.Model.Invoice;
 import org.voucherhub.common.protocol.Model.MintRequest;
@@ -72,21 +74,34 @@ public final class DistributedBenchmark {
         while ((line = in.readLine()) != null) {
             String[] parts = line.split(" ");
             long amount = parts.length > 2 ? Long.parseLong(parts[2]) : 10L;
-            long start = System.nanoTime();
+            long start = 0L;
             boolean ok = true;
             String status = "ok";
             try {
                 if ("VOUCHER_MINT".equals(parts[0])) {
+                    start = System.nanoTime();
                     voucherMintOnly(protocol, alice, bob.cid, amount);
+                } else if ("VOUCHER_BATCH_REDEEM".equals(parts[0])) {
+                    int count = parts.length > 4 ? Integer.parseInt(parts[4]) : 1;
+                    List<WalletVoucher> vouchers = issueVouchers(protocol, alice, bob, count, amount);
+                    OpeningProof proof = protocol.makeBatchRedeemProof(vouchers);
+                    start = System.nanoTime();
+                    BatchResult result = protocol.batchRedeemWithProof(bob, vouchers, proof);
+                    if (!result.success) {
+                        throw new IllegalStateException("batch redeem failed");
+                    }
                 } else if ("ACCIO_TX".equals(parts[0])) {
+                    start = System.nanoTime();
                     accioCompleteTransaction(protocol, alice, bob, amount);
                 } else if ("ACCIO_CONFIRM".equals(parts[0])) {
                     // Models the final hub-side confirmation round required before Accio is complete.
                     // Channel open/close is still outside the measured loop.
+                    start = System.nanoTime();
                 } else if ("STOP".equals(parts[0])) {
                     writeLine(out, "OK bye");
                     return;
                 } else {
+                    start = System.nanoTime();
                     ok = false;
                     status = "unknown-command";
                 }
@@ -100,13 +115,14 @@ public final class DistributedBenchmark {
     }
 
     private static void runPayee(int port) throws IOException {
+        PayeeAcceptSample acceptSample = makePayeeAcceptSample(10L);
         try (ServerSocket server = new ServerSocket(port)) {
             System.out.println("payee listening on " + port);
             while (true) {
                 Socket socket = server.accept();
                 Thread worker = new Thread(() -> {
                     try (Socket s = socket) {
-                        handlePayeeConnection(s);
+                        handlePayeeConnection(s, acceptSample);
                     } catch (IOException e) {
                         System.err.println("payee connection failed: " + e.getMessage());
                     }
@@ -117,26 +133,41 @@ public final class DistributedBenchmark {
         }
     }
 
-    private static void handlePayeeConnection(Socket socket) throws IOException {
+    private static void handlePayeeConnection(Socket socket, PayeeAcceptSample acceptSample) throws IOException {
         BufferedReader in = reader(socket);
         BufferedWriter out = writer(socket);
         String line;
         while ((line = in.readLine()) != null) {
             String[] parts = line.split(" ");
-            long start = System.nanoTime();
             if ("STOP".equals(parts[0])) {
                 writeLine(out, "OK bye");
                 return;
             }
             if ("INVOICE".equals(parts[0])) {
+                long start = System.nanoTime();
                 writeLine(out, "OK invoice " + (parts.length > 2 ? parts[2] : "10") + " " + formatSince(start));
             } else if ("VOUCHER_RECEIVE".equals(parts[0])) {
+                long start = System.nanoTime();
+                payeeAcceptValidVoucher(acceptSample);
                 writeLine(out, "OK accepted " + formatSince(start));
+            } else if ("VOUCHER_BATCH_PROOF".equals(parts[0])) {
+                long amount = parts.length > 2 ? Long.parseLong(parts[2]) : 10L;
+                int count = parts.length > 4 ? Integer.parseInt(parts[4]) : 1;
+                VoucherHubProtocol protocol = new VoucherHubProtocol();
+                Channel alice = protocol.openChannel("alice-hub", 100_000_000, 100_000_000);
+                Channel bob = protocol.openChannel("bob-hub", 100_000, 100_000_000);
+                List<WalletVoucher> vouchers = issueVouchers(protocol, alice, bob, count, amount);
+                long start = System.nanoTime();
+                protocol.makeBatchRedeemProof(vouchers);
+                writeLine(out, "OK proof " + formatSince(start));
             } else if ("ACCIO_RECEIVE".equals(parts[0])) {
+                long start = System.nanoTime();
                 writeLine(out, "OK settled " + formatSince(start));
             } else if ("ACCIO_FINAL".equals(parts[0])) {
+                long start = System.nanoTime();
                 writeLine(out, "OK finalized " + formatSince(start));
             } else {
+                long start = System.nanoTime();
                 writeLine(out, "ERR unknown-command " + formatSince(start));
             }
         }
@@ -150,6 +181,7 @@ public final class DistributedBenchmark {
         int runs = Integer.parseInt(arg(args, "--runs", "500"));
         int payerCount = Integer.parseInt(arg(args, "--payer-count", "1"));
         String protocol = arg(args, "--protocol", "both");
+        String voucherBoundary = arg(args, "--voucher-boundary", "batch-redeem");
         long amount = Long.parseLong(arg(args, "--amount", "10"));
         Path results = Paths.get(arg(args, "--results", "results/distributed_results.csv"));
 
@@ -160,7 +192,8 @@ public final class DistributedBenchmark {
         RunResult voucher = new RunResult(0, 0);
         RunResult accio = new RunResult(0, 0);
         if ("both".equals(protocol) || "voucher".equals(protocol)) {
-            voucher = runVoucher(hubHost, hubPort, payeeHost, payeePort, runs, payerCount, amount, rows);
+            voucher = runVoucher(hubHost, hubPort, payeeHost, payeePort, runs, payerCount, amount,
+                    voucherBoundary, rows);
         }
         if ("both".equals(protocol) || "accio".equals(protocol)) {
             accio = runAccio(hubHost, hubPort, payeeHost, payeePort, runs, payerCount, amount, rows);
@@ -178,9 +211,11 @@ public final class DistributedBenchmark {
                 + "  \"accio_total_ms\": " + format(accio.totalMs) + ",\n"
                 + "  \"voucher_failures\": " + voucher.failures + ",\n"
                 + "  \"accio_failures\": " + accio.failures + ",\n"
-                + "  \"voucher_payee_rounds_per_tx\": 1,\n"
-                + "  \"voucher_parallelism\": \"different payers execute concurrently\",\n"
-                + "  \"accio_completion\": \"transactions to the same payee are serialized even with multiple payers\",\n"
+                + "  \"voucher_payee_rounds_per_tx\": \"" + voucherPayeeRoundsDescription(voucherBoundary) + "\",\n"
+                + "  \"voucher_batch_redeem\": " + Boolean.toString("batch-redeem".equals(voucherBoundary)) + ",\n"
+                + "  \"voucher_boundary\": \"" + voucherBoundary + "\",\n"
+                + "  \"voucher_parallelism\": \"different payers execute concurrently; payments are assigned by floor(N/p) plus one remainder payment for the lowest-index payers\",\n"
+                + "  \"accio_completion\": \"complete per-payment serialized invoice, transaction, receive, confirm, and final path\",\n"
                 + "  \"excludes_channel_open_close\": true\n"
                 + "}\n";
         Files.write(summary, json.getBytes(StandardCharsets.UTF_8));
@@ -188,13 +223,15 @@ public final class DistributedBenchmark {
     }
 
     private static RunResult runVoucher(String hubHost, int hubPort, String payeeHost, int payeePort,
-                                        int runs, int payerCount, long amount, List<String> rows) throws IOException {
-        AtomicInteger nextRun = new AtomicInteger();
+                                        int runs, int payerCount, long amount, String voucherBoundary,
+                                        List<String> rows) throws IOException {
         AtomicInteger failures = new AtomicInteger();
         List<Thread> workers = new ArrayList<>();
         long startWall = System.nanoTime();
         for (int payer = 0; payer < payerCount; payer++) {
             int payerId = payer;
+            int firstRun = firstRunForPayer(runs, payerCount, payerId);
+            int assignedRuns = runsForPayer(runs, payerCount, payerId);
             Thread worker = new Thread(() -> {
                 try (Socket hub = new Socket(hubHost, hubPort);
                      Socket payee = new Socket(payeeHost, payeePort)) {
@@ -202,11 +239,8 @@ public final class DistributedBenchmark {
                     BufferedWriter hubOut = writer(hub);
                     BufferedReader payeeIn = reader(payee);
                     BufferedWriter payeeOut = writer(payee);
-                    while (true) {
-                        int run = nextRun.getAndIncrement();
-                        if (run >= runs) {
-                            break;
-                        }
+                    for (int offset = 0; offset < assignedRuns; offset++) {
+                        int run = firstRun + offset;
                         long start = System.nanoTime();
                         writeLine(hubOut, "VOUCHER_MINT " + run + " " + amount + " " + payerId);
                         String hubResp = hubIn.readLine();
@@ -233,7 +267,54 @@ public final class DistributedBenchmark {
             worker.start();
         }
         joinAll(workers);
+        if ("batch-redeem".equals(voucherBoundary)) {
+            try (Socket hub = new Socket(hubHost, hubPort);
+                 Socket payee = new Socket(payeeHost, payeePort)) {
+                BufferedReader hubIn = reader(hub);
+                BufferedWriter hubOut = writer(hub);
+                BufferedReader payeeIn = reader(payee);
+                BufferedWriter payeeOut = writer(payee);
+                long start = System.nanoTime();
+                writeLine(payeeOut, "VOUCHER_BATCH_PROOF " + runs + " " + amount + " 0 " + runs);
+                String payeeResp = payeeIn.readLine();
+                writeLine(hubOut, "VOUCHER_BATCH_REDEEM " + runs + " " + amount + " 0 " + runs);
+                String hubResp = hubIn.readLine();
+                long end = System.nanoTime();
+                double ms = (end - start) / 1_000_000.0;
+                double completionMs = (end - startWall) / 1_000_000.0;
+                boolean ok = isOk(payeeResp) && isOk(hubResp);
+                if (!ok) {
+                    failures.incrementAndGet();
+                }
+                rows.add("VoucherHub," + payerCount + "," + runs + "," + format(ms) + ","
+                        + format(completionMs) + "," + ok + ","
+                        + responseMs(hubResp) + ",1,2");
+            }
+        } else if (!"accept".equals(voucherBoundary)) {
+            throw new IllegalArgumentException("unknown voucher boundary: " + voucherBoundary);
+        }
         return new RunResult((System.nanoTime() - startWall) / 1_000_000.0, failures.get());
+    }
+
+    private static String voucherPayeeRoundsDescription(String voucherBoundary) {
+        if ("accept".equals(voucherBoundary)) {
+            return "1 critical-path accept round; final batch redeem excluded";
+        }
+        return "1 critical-path accept round plus one final batch redeem";
+    }
+
+    private static int runsForPayer(int runs, int payerCount, int payerId) {
+        int base = runs / payerCount;
+        int remainder = runs % payerCount;
+        return base + (payerId < remainder ? 1 : 0);
+    }
+
+    private static int firstRunForPayer(int runs, int payerCount, int payerId) {
+        int first = 0;
+        for (int p = 0; p < payerId; p++) {
+            first += runsForPayer(runs, payerCount, p);
+        }
+        return first;
     }
 
     private static RunResult runAccio(String hubHost, int hubPort, String payeeHost, int payeePort,
@@ -293,14 +374,46 @@ public final class DistributedBenchmark {
         protocol.completeMint(alice, request, pre);
     }
 
+    private static List<WalletVoucher> issueVouchers(VoucherHubProtocol protocol, Channel alice, Channel bob,
+                                                     int count, long amount) {
+        List<WalletVoucher> vouchers = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            Invoice invoice = protocol.makeInvoice(bob.cid, amount);
+            MintRequest request = protocol.makeMintRequest(alice, invoice, false);
+            PreCredential pre = protocol.hubPrepare(alice, request);
+            ReleasedCredential credential = protocol.completeMint(alice, request, pre);
+            vouchers.add(protocol.bobAccept(invoice, credential));
+        }
+        return vouchers;
+    }
+
     private static void accioCompleteTransaction(VoucherHubProtocol protocol, Channel alice, Channel bob, long amount) {
         Invoice invoice = protocol.makeInvoice(bob.cid, amount);
         MintRequest request = protocol.makeMintRequest(alice, invoice, false);
         PreCredential pre = protocol.hubPrepare(alice, request);
         ReleasedCredential credential = protocol.completeMint(alice, request, pre);
         WalletVoucher voucher = protocol.bobAccept(invoice, credential);
-        if (!protocol.redeem(bob, voucher, bob.cid, null).success) {
+        OpeningProof proof = protocol.makeRedeemProof(voucher, bob.cid);
+        if (!protocol.redeemWithProof(bob, voucher, bob.cid, null, proof).success) {
             throw new IllegalStateException("accio redeem failed");
+        }
+    }
+
+    private static PayeeAcceptSample makePayeeAcceptSample(long amount) {
+        VoucherHubProtocol protocol = new VoucherHubProtocol();
+        Channel alice = protocol.openChannel("alice-hub", 100_000_000, 100_000_000);
+        Channel bob = protocol.openChannel("bob-hub", 100_000, 100_000_000);
+        Invoice invoice = protocol.makeInvoice(bob.cid, amount);
+        MintRequest request = protocol.makeMintRequest(alice, invoice, false);
+        PreCredential pre = protocol.hubPrepare(alice, request);
+        ReleasedCredential credential = protocol.completeMint(alice, request, pre);
+        return new PayeeAcceptSample(protocol, invoice, credential);
+    }
+
+    private static void payeeAcceptValidVoucher(PayeeAcceptSample sample) {
+        WalletVoucher voucher = sample.protocol.bobAccept(sample.invoice, sample.credential);
+        if (voucher.nullifier == null || voucher.nullifier.isEmpty()) {
+            throw new IllegalStateException("voucher accept failed");
         }
     }
 
@@ -354,6 +467,18 @@ public final class DistributedBenchmark {
         private RunResult(double totalMs, int failures) {
             this.totalMs = totalMs;
             this.failures = failures;
+        }
+    }
+
+    private static final class PayeeAcceptSample {
+        private final VoucherHubProtocol protocol;
+        private final Invoice invoice;
+        private final ReleasedCredential credential;
+
+        private PayeeAcceptSample(VoucherHubProtocol protocol, Invoice invoice, ReleasedCredential credential) {
+            this.protocol = protocol;
+            this.invoice = invoice;
+            this.credential = credential;
         }
     }
 }

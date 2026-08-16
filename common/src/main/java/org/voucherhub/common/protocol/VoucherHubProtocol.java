@@ -4,6 +4,8 @@ import org.voucherhub.common.crypto.DRSign;
 import org.voucherhub.common.crypto.G1Point;
 import org.voucherhub.common.crypto.PublicParameters;
 import org.voucherhub.common.crypto.Scalar;
+import org.voucherhub.common.crypto.SigmaProtocol;
+import org.voucherhub.common.crypto.SigmaProtocol.OpeningProof;
 import org.voucherhub.common.protocol.Model.BatchResult;
 import org.voucherhub.common.protocol.Model.Channel;
 import org.voucherhub.common.protocol.Model.Invoice;
@@ -22,6 +24,7 @@ public final class VoucherHubProtocol {
     public final DRSign drSign = new DRSign(pp);
     public final DRSign.KeyPair hubKey = drSign.keyGen();
     public final FairMint fairMint = new FairMint(pp, drSign);
+    public final SigmaProtocol sigma = new SigmaProtocol(pp);
     private final Set<String> spentNullifiers = new HashSet<>();
 
     public Channel openChannel(String cid, long userBalance, long hubBalance) {
@@ -114,6 +117,41 @@ public final class VoucherHubProtocol {
         return new RedeemResult(true, "ok");
     }
 
+    public OpeningProof makeRedeemProof(WalletVoucher voucher, String cidB) {
+        G1Point amountCommitment = amountCommitment(voucher, cidB, voucher.invoice.rId);
+        return sigma.proveOpening(amountCommitment, Scalar.of(voucher.invoice.amount), voucher.invoice.rX,
+                redeemContext(cidB, voucher.nullifier, voucher.cXPrime, amountCommitment));
+    }
+
+    public RedeemResult redeemWithProof(Channel bob, WalletVoucher voucher, String cidB,
+                                        Scalar rIdOverride, OpeningProof proof) {
+        if (!voucher.invoice.cidB.equals(cidB)) {
+            return new RedeemResult(false, "wrong cid_B");
+        }
+        if (spentNullifiers.contains(voucher.nullifier)) {
+            return new RedeemResult(false, "duplicate nullifier");
+        }
+        if (!drSign.verify(hubKey.pk, voucher.cXPrime, voucher.signature)) {
+            return new RedeemResult(false, "invalid DRSign credential");
+        }
+        Scalar rId = rIdOverride == null ? voucher.invoice.rId : rIdOverride;
+        G1Point amountCommitment = amountCommitment(voucher, cidB, rId);
+        if (!sigma.verifyOpening(amountCommitment, proof,
+                redeemContext(cidB, voucher.nullifier, voucher.cXPrime, amountCommitment))) {
+            return new RedeemResult(false, "invalid Sigma opening proof");
+        }
+        if (bob.hubBalance < voucher.invoice.amount) {
+            return new RedeemResult(false, "insufficient hub-side channel balance");
+        }
+        spentNullifiers.add(voucher.nullifier);
+        bob.userBalance += voucher.invoice.amount;
+        bob.hubBalance -= voucher.invoice.amount;
+        bob.cUser = bob.cUser.add(amountCommitment);
+        bob.cHub = bob.cHub.sub(amountCommitment);
+        bob.version++;
+        return new RedeemResult(true, "ok");
+    }
+
     public BatchResult batchRedeem(Channel bob, List<WalletVoucher> vouchers) {
         long total = 0;
         for (WalletVoucher v : vouchers) {
@@ -127,6 +165,50 @@ public final class VoucherHubProtocol {
         for (WalletVoucher v : vouchers) {
             spentNullifiers.add(v.nullifier);
             sum = sum.add(v.cXPrime.sub(pp.G1.mul(pp.hId(v.invoice.cidB))).sub(pp.P1.mul(v.invoice.rId)));
+        }
+        bob.userBalance += total;
+        bob.hubBalance -= total;
+        bob.cUser = bob.cUser.add(sum);
+        bob.cHub = bob.cHub.sub(sum);
+        bob.version++;
+        return new BatchResult(true, vouchers.size(), total);
+    }
+
+    public OpeningProof makeBatchRedeemProof(List<WalletVoucher> vouchers) {
+        G1Point sum = G1Point.zero();
+        Scalar totalValue = Scalar.of(0);
+        Scalar totalRandomness = Scalar.of(0);
+        for (WalletVoucher v : vouchers) {
+            sum = sum.add(amountCommitment(v, v.invoice.cidB, v.invoice.rId));
+            totalValue = totalValue.add(Scalar.of(v.invoice.amount));
+            totalRandomness = totalRandomness.add(v.invoice.rX);
+        }
+        return sigma.proveOpening(sum, totalValue, totalRandomness, batchRedeemContext(vouchers, sum));
+    }
+
+    public BatchResult batchRedeemWithProof(Channel bob, List<WalletVoucher> vouchers, OpeningProof proof) {
+        long total = 0;
+        G1Point sum = G1Point.zero();
+        Set<String> seen = new HashSet<>();
+        for (WalletVoucher v : vouchers) {
+            RedeemResult check = validateRedeemVoucher(bob, v);
+            if (!check.success) {
+                return new BatchResult(false, 0, total);
+            }
+            if (!seen.add(v.nullifier)) {
+                return new BatchResult(false, 0, total);
+            }
+            total += v.invoice.amount;
+            sum = sum.add(amountCommitment(v, v.invoice.cidB, v.invoice.rId));
+        }
+        if (bob.hubBalance < total) {
+            return new BatchResult(false, 0, total);
+        }
+        if (!sigma.verifyOpening(sum, proof, batchRedeemContext(vouchers, sum))) {
+            return new BatchResult(false, 0, total);
+        }
+        for (WalletVoucher v : vouchers) {
+            spentNullifiers.add(v.nullifier);
         }
         bob.userBalance += total;
         bob.hubBalance -= total;
@@ -154,6 +236,46 @@ public final class VoucherHubProtocol {
             return new RedeemResult(false, "insufficient hub-side channel balance");
         }
         return new RedeemResult(true, "ok");
+    }
+
+    private RedeemResult validateRedeemVoucher(Channel bob, WalletVoucher voucher) {
+        if (spentNullifiers.contains(voucher.nullifier)) {
+            return new RedeemResult(false, "duplicate nullifier");
+        }
+        if (!drSign.verify(hubKey.pk, voucher.cXPrime, voucher.signature)) {
+            return new RedeemResult(false, "invalid DRSign credential");
+        }
+        if (bob.hubBalance < voucher.invoice.amount) {
+            return new RedeemResult(false, "insufficient hub-side channel balance");
+        }
+        return new RedeemResult(true, "ok");
+    }
+
+    private G1Point amountCommitment(WalletVoucher voucher, String cidB, Scalar rId) {
+        return voucher.cXPrime
+                .sub(pp.G1.mul(pp.hId(cidB)))
+                .sub(pp.P1.mul(rId));
+    }
+
+    private String redeemContext(String cidB, String nullifier, G1Point cXPrime, G1Point amountCommitment) {
+        return "redeem|" + cidB + "|" + nullifier + "|" + cXPrime.canonical()
+                + "|" + amountCommitment.canonical();
+    }
+
+    private String batchRedeemContext(List<WalletVoucher> vouchers, G1Point sum) {
+        StringBuilder context = new StringBuilder("batch-redeem|").append(sum.canonical());
+        for (WalletVoucher v : vouchers) {
+            G1Point amountCommitment = amountCommitment(v, v.invoice.cidB, v.invoice.rId);
+            context.append('|')
+                    .append(v.invoice.cidB)
+                    .append(':')
+                    .append(v.nullifier)
+                    .append(':')
+                    .append(v.cXPrime.canonical())
+                    .append(':')
+                    .append(amountCommitment.canonical());
+        }
+        return context.toString();
     }
 
     private void verifyMintRequest(Channel alice, MintRequest request) {

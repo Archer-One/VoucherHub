@@ -4,6 +4,7 @@ import org.voucherhub.common.crypto.DRSign;
 import org.voucherhub.common.crypto.G1Point;
 import org.voucherhub.common.crypto.PublicParameters;
 import org.voucherhub.common.crypto.Scalar;
+import org.voucherhub.common.crypto.SigmaProtocol.OpeningProof;
 import org.voucherhub.common.protocol.FairMint;
 import org.voucherhub.common.protocol.Model.Channel;
 import org.voucherhub.common.protocol.Model.Invoice;
@@ -59,17 +60,26 @@ public final class SelfTest {
         PreCredential pre = p.hubPrepare(alice, request);
         ReleasedCredential credential = p.completeMint(alice, request, pre);
         WalletVoucher voucher = p.bobAccept(invoice, credential);
-        assertTrue(p.redeem(bob, voucher, bob.cid, null).success, "single redeem");
-        assertTrue(!p.redeem(bob, voucher, bob.cid, null).success, "duplicate nullifier");
+        OpeningProof proof = p.makeRedeemProof(voucher, bob.cid);
+        OpeningProof badProof = new OpeningProof(proof.announcement, proof.zValue.add(Scalar.of(1)), proof.zRandomness);
+        assertTrue(!p.redeemWithProof(bob, voucher, bob.cid, null, badProof).success,
+                "single redeem rejects malformed Sigma proof");
+        assertTrue(p.redeemWithProof(bob, voucher, bob.cid, null, proof).success,
+                "single redeem with Sigma proof");
+        assertTrue(!p.redeemWithProof(bob, voucher, bob.cid, null, proof).success, "duplicate nullifier");
 
         VoucherHubProtocol p2 = new VoucherHubProtocol();
         Channel a2 = p2.openChannel("alice", 10_000, 10_000);
         Channel b2 = p2.openChannel("bob", 100, 10_000);
         WalletVoucher v1 = issue(p2, a2, b2, 3);
         WalletVoucher v2 = issue(p2, a2, b2, 4);
-        assertTrue(p2.batchRedeem(b2, Arrays.asList(v1, v2)).success && b2.userBalance == 107,
-                "batch redeem aggregation");
-        assertTrue(!p2.redeem(b2, issue(p2, a2, b2, 5), "wrong", null).success, "wrong cid");
+        java.util.List<WalletVoucher> batch = Arrays.asList(v1, v2);
+        assertTrue(p2.batchRedeemWithProof(b2, batch, p2.makeBatchRedeemProof(batch)).success
+                        && b2.userBalance == 107,
+                "batch redeem aggregate Sigma proof");
+        WalletVoucher wrongCid = issue(p2, a2, b2, 5);
+        assertTrue(!p2.redeemWithProof(b2, wrongCid, "wrong", null, p2.makeRedeemProof(wrongCid, b2.cid)).success,
+                "wrong cid");
     }
 
     private static WalletVoucher issue(VoucherHubProtocol p, Channel alice, Channel bob, long amount) {

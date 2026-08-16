@@ -8,8 +8,14 @@ import java.util.stream.Collectors;
 
 public final class G1Point {
     private final TreeMap<String, BigInteger> coeffs;
+    private final org.aion.tetryon.G1Point nativePoint;
 
     private G1Point(TreeMap<String, BigInteger> coeffs) {
+        this(coeffs, null);
+    }
+
+    private G1Point(TreeMap<String, BigInteger> coeffs, org.aion.tetryon.G1Point nativePoint) {
+        this.nativePoint = nativePoint;
         this.coeffs = new TreeMap<>();
         for (Map.Entry<String, BigInteger> e : coeffs.entrySet()) {
             BigInteger v = e.getValue().mod(Scalar.Q);
@@ -20,26 +26,41 @@ public final class G1Point {
     }
 
     public static G1Point zero() {
+        if (CryptoBackend.isBn128()) {
+            return new G1Point(new TreeMap<>(), Bn128Support.zero());
+        }
         return new G1Point(new TreeMap<>());
     }
 
     public static G1Point basis(String name) {
+        if (CryptoBackend.isBn128()) {
+            return new G1Point(new TreeMap<>(), Bn128Support.basis(name));
+        }
         TreeMap<String, BigInteger> m = new TreeMap<>();
         m.put(name, BigInteger.ONE);
         return new G1Point(m);
     }
 
     public G1Point add(G1Point other) {
+        if (CryptoBackend.isBn128()) {
+            return new G1Point(new TreeMap<>(), Bn128Support.add(nativePoint, other.nativePoint));
+        }
         TreeMap<String, BigInteger> m = new TreeMap<>(coeffs);
         other.coeffs.forEach((k, v) -> m.merge(k, v, BigInteger::add));
         return new G1Point(m);
     }
 
     public G1Point sub(G1Point other) {
+        if (CryptoBackend.isBn128()) {
+            return new G1Point(new TreeMap<>(), Bn128Support.sub(nativePoint, other.nativePoint));
+        }
         return add(other.mul(Scalar.of(-1)));
     }
 
     public G1Point mul(Scalar scalar) {
+        if (CryptoBackend.isBn128()) {
+            return new G1Point(new TreeMap<>(), Bn128Support.mul(nativePoint, scalar));
+        }
         TreeMap<String, BigInteger> m = new TreeMap<>();
         coeffs.forEach((k, v) -> m.put(k, v.multiply(scalar.asBigInteger())));
         return new G1Point(m);
@@ -50,6 +71,9 @@ public final class G1Point {
     }
 
     public String canonical() {
+        if (CryptoBackend.isBn128()) {
+            return Bn128Support.canonical(nativePoint);
+        }
         if (coeffs.isEmpty()) {
             return "0";
         }
@@ -60,16 +84,37 @@ public final class G1Point {
 
     @Override
     public boolean equals(Object obj) {
-        return obj instanceof G1Point && coeffs.equals(((G1Point) obj).coeffs);
+        if (!(obj instanceof G1Point)) {
+            return false;
+        }
+        G1Point other = (G1Point) obj;
+        if (CryptoBackend.isBn128()) {
+            return Bn128Support.equals(nativePoint, other.nativePoint);
+        }
+        return coeffs.equals(other.coeffs);
     }
 
     @Override
     public int hashCode() {
+        if (CryptoBackend.isBn128()) {
+            return canonical().hashCode();
+        }
         return Objects.hash(coeffs);
     }
 
     @Override
     public String toString() {
         return canonical();
+    }
+
+    boolean isZero() {
+        return CryptoBackend.isBn128() ? Bn128Support.isZero(nativePoint) : coeffs.isEmpty();
+    }
+
+    org.aion.tetryon.G1Point nativePoint() {
+        if (!CryptoBackend.isBn128()) {
+            throw new IllegalStateException("native point requested while backend is " + CryptoBackend.name());
+        }
+        return nativePoint;
     }
 }
