@@ -1,0 +1,124 @@
+{
+  "hub": {
+    "jump": "tokyo5",
+    "key": "tokyo1.pem",
+    "name": "tokyo2",
+    "public_ip": "35.79.227.192",
+    "region": "ap-northeast-1"
+  },
+  "nodes": [
+    {
+      "jump": "tokyo5",
+      "key": "tokyo1.pem",
+      "name": "tokyo1",
+      "onion": "reolruifpzgdtzniyhpzuo55pkmzxj7sauhiv6w22q6ovtcvcnk53syd.onion",
+      "public_ip": "18.183.246.100",
+      "region": "ap-northeast-1"
+    },
+    {
+      "jump": "tokyo5",
+      "key": "tokyo1.pem",
+      "name": "tokyo3",
+      "onion": "x6a3anaox7i65fspbtbmjl6rdqu6iixf4lsqqhxti3knqkumtzpp6nad.onion",
+      "public_ip": "54.92.2.10",
+      "region": "ap-northeast-1"
+    },
+    {
+      "jump": "tokyo5",
+      "key": "tokyo1.pem",
+      "name": "tokyo4",
+      "onion": "a7ze5yo4bqy6phggob4iec5akchl3xlpcqchyrdjedmqhu4uq4mkclid.onion",
+      "public_ip": "13.231.139.77",
+      "region": "ap-northeast-1"
+    },
+    {
+      "key": "tokyo1.pem",
+      "name": "tokyo5",
+      "onion": "7srgefthycxenbpwjn323j7e5f4kw53rmkjnzpxfn2opthddcqo6xkyd.onion",
+      "public_ip": "18.182.46.50",
+      "region": "ap-northeast-1"
+    },
+    {
+      "jump": "tokyo5",
+      "key": "tokyo1.pem",
+      "name": "tokyo6",
+      "onion": "yr3eybdl72dwgn4pn2nv4krnfklstsw2u62qisqworer7p4qn3bqvnqd.onion",
+      "public_ip": "18.183.117.178",
+      "region": "ap-northeast-1"
+    },
+    {
+      "jump": "tokyo5",
+      "key": "tokyo1.pem",
+      "name": "tokyo7",
+      "onion": "4fcss4odescyhouay5y4mmdmarw5b6rsci4bx2bq7g3m74oy5qqch3id.onion",
+      "public_ip": "52.199.246.164",
+      "region": "ap-northeast-1"
+    },
+    {
+      "key": "seoul1.pem",
+      "name": "seoul1",
+      "onion": "r7kfkfkw2zhkzcxaegp6s53kepdh25pwdozr7him4nd6vsh7gn7c2xad.onion",
+      "public_ip": "3.34.198.147",
+      "region": "ap-northeast-2"
+    },
+    {
+      "jump": "seoul1",
+      "key": "seoul1.pem",
+      "name": "seoul2",
+      "onion": "2vluo454475caxedgofahpdwzlvpj6gvaxet6c4zxeiihnbhfp77m6id.onion",
+      "public_ip": "15.165.159.44",
+      "region": "ap-northeast-2"
+    },
+    {
+      "key": "seoul1.pem",
+      "name": "seoul3",
+      "onion": "qv6xgqdaasghwolgihdp67jm2wpdfmfvnppbvi677zve63tjemr7sfid.onion",
+      "public_ip": "13.125.210.92",
+      "region": "ap-northeast-2"
+    },
+    {
+      "jump": "seoul1",
+      "key": "singapore1.pem",
+      "name": "singapore1",
+      "onion": "kjmbcr7k35yu6odva7hqbjggi7ztmpzcilwga7p6wsuen3snc7s6ogqd.onion",
+      "public_ip": "18.143.153.164",
+      "region": "ap-southeast-1"
+    },
+    {
+      "jump": "seoul1",
+      "key": "singapore1.pem",
+      "name": "singapore2",
+      "onion": "e6efyda6t6o3wcmqphftwdncausdug55cn3s6f2ekofqa7roxeddpqad.onion",
+      "public_ip": "13.214.149.253",
+      "region": "ap-southeast-1"
+    },
+    {
+      "key": "frankfurt1.pem",
+      "name": "frankfurt1",
+      "onion": "v27dn7czzlj7t7nu5aptu2esi5zd2iss7m7dqk27x37jpj5v2vkeubid.onion",
+      "public_ip": "18.196.227.238",
+      "region": "eu-central-1"
+    },
+    {
+      "key": "frankfurt1.pem",
+      "name": "frankfurt2",
+      "onion": "fg2ixcudwqcqarjshtiaxeazwddvyng5243z4u3vyrphi7tq4xrkxbad.onion",
+      "public_ip": "3.121.41.160",
+      "region": "eu-central-1"
+    },
+    {
+      "key": "virginia1.pem",
+      "name": "virginia1",
+      "onion": "n4izjlscsttv7bxezgigltkdwmny4tjdnofn5gr3julqa46ohoytmxid.onion",
+      "public_ip": "98.84.188.150",
+      "region": "us-east-1"
+    },
+    {
+      "key": "virginia1.pem",
+      "name": "virginia2",
+      "onion": "h3or35wskk34u5nlcvuv7z4tpz54225iatxmnbxd3azddspdlvcwcbad.onion",
+      "public_ip": "50.19.139.73",
+      "region": "us-east-1"
+    }
+  ]
+}
