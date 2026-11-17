@@ -2,13 +2,12 @@
 
 本包包含协议实现、自动测试、AWS/Tor 实验运行器、结果汇总、Figure 1 画图代码，以及 gas 测量合约和云端运行器。补充了 native/ 下的 Rust/JNI 源码。包内不包含 SSH 私钥、预编译动态库、真实实验原始数据或生成图。
 
-先阅读 [实现范围与连接核对](docs/实现范围与连接核对.md)。正式入口使用真实 Tor，不使用延迟补偿模拟。
 
 ## 目录
 
 - `code/未命名/`：Java 协议原型、自测、Solidity gas benchmark。
 - `experiments/voucherhub_evaluation/`：AWS 部署、Tor 实验、汇总与测试。
-- `charts/`：真实 Tor 数据画图和 synthetic demo 数据生成器。
+- `charts/`： Tor 数据画图和 synthetic demo 数据生成器。
 
 ## 1. 本地无 native 库的基础检查
 
