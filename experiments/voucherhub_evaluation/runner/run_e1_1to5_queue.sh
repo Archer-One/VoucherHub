@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+runner=/home/ubuntu/voucherhub/run_e1_series.sh
+output=/home/ubuntu/voucherhub/results/evaluation/e1
+
+REPETITIONS=20 "$runner" same_city_1to5 \
+  juo75uy35pov75fu3tsgdqbziy67nkm6w2md7ijoezplheqdozssmtad.onion,76hxjcm2qfso55njk3fxqulads5tuwyxzjatw5p6ezuym6bsinyeuzqd.onion,jdjvd4ptmgh6qpnbsspezkt6ktsckrsqsi7gpfehd4ejeksqg7lep7id.onion,g74dgn5yhvcdoxmef3ysfx5n54ghspa7udcj7lognbmytz2bwmvjopad.onion,wyhl5o7vkwibqtx2g57zjgqyjslvky5v3icnrttivuynirzgc3kjcnid.onion \
+  tokyo1,tokyo3,tokyo5,tokyo6,tokyo7 "$output"
+REPETITIONS=20 "$runner" regional_1to5 \
+  5yqksfmfewhx4ygfpxef65zx7anezji2udiz2wn5cutwog4f22meaoqd.onion,7o5vk5ttisyzjtgzlpri5jnjjtezothnj4ms5l2lwtusxa5522tuviqd.onion,bxvooypd4fcfdqefz5e3inmxasifryfqmeicqgq6irbvd434yrylavid.onion,p6iqu3ncdtkakqkxlcaylasbpskrnfv7mvq6ektbbczwhsf765zptfyd.onion,aharjfecyjt63tovlainx5hjui4iyiiaxx5fdat72oh3r2p47pim3cqd.onion \
+  seoul1,seoul2,seoul3,singapore1,singapore2 "$output"
+REPETITIONS=20 "$runner" global_1to5 \
+  76hxjcm2qfso55njk3fxqulads5tuwyxzjatw5p6ezuym6bsinyeuzqd.onion,ucbrfdgt6e3ldfm7djb3goqva6uxq34qs3tkh5fcefmwcftqi7pl4xyd.onion,vv5nekwisck4i77lve27f7oq26j4jlnr72yjhzcnzml2zsn5qabkz5ad.onion,hboi5zdwozb2dz4iov2s53hhcvp34z57e6jzk6upzfceteqvv3cqg5ad.onion,2miniucabiywmzd6p35buhirntppf4cgo623shu6oxirkl4azhb3j3qd.onion \
+  tokyo3,frankfurt1,frankfurt2,virginia1,virginia2 "$output"

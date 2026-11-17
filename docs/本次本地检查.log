@@ -1,0 +1,20 @@
+SelfTest passed
+test_contract_contains_all_benchmarks (test_gas_tools.GasToolsTest) ... ok
+test_summary_drops_exactly_one_minimum_and_maximum (test_gas_tools.GasToolsTest) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.001s
+
+OK
+test_current_payees_have_v3_onion_addresses (test_runner_tools.RunnerToolsTest) ... ok
+test_distribution_preserves_total (test_runner_tools.RunnerToolsTest) ... ok
+test_five_to_one_distributes_100_as_twenty_each (test_runner_tools.RunnerToolsTest) ... ok
+test_direct_requires_explicit_opt_in (test_transport_policy.TransportPolicyTest) ... ok
+test_non_onion_destination_rejected_before_connect (test_transport_policy.TransportPolicyTest) ... ok
+test_payee_binds_only_loopback (test_transport_policy.TransportPolicyTest) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 1.500s
+
+OK
+All offline checks passed.
